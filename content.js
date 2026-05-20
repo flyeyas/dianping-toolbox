@@ -1,61 +1,104 @@
-const PUBLISH_BUTTON_XPATH = '//div[@class="publish-button-R3RwZe"]';
-const IMAGE_URL_XPATH = '//div[@class="image-player-content-rLWQU_"]/div/img/@src';
 const EXTENSION_BUTTON_ID = "xpath-image-download-button";
 
-function evaluateXPath(xpath, contextNode = document) {
-  const result = document.evaluate(
-    xpath,
-    contextNode,
-    null,
-    XPathResult.ORDERED_NODE_SNAPSHOT_TYPE,
-    null
+function findNativeDownloadButton() {
+  const buttons = Array.from(document.querySelectorAll('button[type="button"]'));
+
+  const candidates = buttons.filter((button) => {
+    if (!(button instanceof HTMLButtonElement)) {
+      return false;
+    }
+
+    if (!isVisible(button)) {
+      return false;
+    }
+
+    if (button.id === EXTENSION_BUTTON_ID) {
+      return false;
+    }
+
+    const label = getButtonLabel(button);
+    return label === "下载";
+  });
+
+  candidates.sort((left, right) => scoreDownloadButton(right) - scoreDownloadButton(left));
+  return candidates[0] || null;
+}
+
+function getButtonLabel(button) {
+  const label = button.innerText || button.textContent || "";
+  return label.replace(/\s+/g, " ").trim();
+}
+
+function scoreDownloadButton(button) {
+  const rect = button.getBoundingClientRect();
+  const widthScore = rect.width >= 80 ? 4 : 0;
+  const topHalfScore = rect.top < window.innerHeight * 0.35 ? 3 : 0;
+  const rightSideScore = rect.left > window.innerWidth * 0.55 ? 3 : 0;
+  const iconScore = button.querySelector("svg") ? 2 : 0;
+  return widthScore + topHalfScore + rightSideScore + iconScore;
+}
+
+function isVisible(element) {
+  const rect = element.getBoundingClientRect();
+  const style = window.getComputedStyle(element);
+  return (
+    rect.width > 0 &&
+    rect.height > 0 &&
+    style.visibility !== "hidden" &&
+    style.display !== "none"
   );
-
-  const values = [];
-
-  for (let i = 0; i < result.snapshotLength; i += 1) {
-    const node = result.snapshotItem(i);
-
-    if (!node) {
-      continue;
-    }
-
-    if (node.nodeType === Node.ATTRIBUTE_NODE) {
-      values.push(node.value);
-      continue;
-    }
-
-    if (node instanceof HTMLImageElement) {
-      values.push(node.currentSrc || node.src);
-      continue;
-    }
-
-    if (typeof node.getAttribute === "function") {
-      const src = node.getAttribute("src");
-      if (src) {
-        values.push(src);
-      }
-    }
-  }
-
-  return [...new Set(values)].filter(Boolean);
 }
 
 function findPublishContainer() {
-  return document.evaluate(
-    PUBLISH_BUTTON_XPATH,
-    document,
-    null,
-    XPathResult.FIRST_ORDERED_NODE_TYPE,
-    null
-  ).singleNodeValue;
+  const nativeDownloadButton = findNativeDownloadButton();
+  if (!nativeDownloadButton) {
+    return null;
+  }
+
+  return nativeDownloadButton.parentElement;
+}
+
+function findImageUrls() {
+  const images = Array.from(document.images);
+  const candidates = images
+    .filter((image) => {
+      if (!(image instanceof HTMLImageElement)) {
+        return false;
+      }
+
+      if (!isVisible(image)) {
+        return false;
+      }
+
+      const src = image.currentSrc || image.src || "";
+      if (!src || src.startsWith("data:")) {
+        return false;
+      }
+
+      const rect = image.getBoundingClientRect();
+      return rect.width >= 240 && rect.height >= 240;
+    })
+    .map((image) => {
+      const rect = image.getBoundingClientRect();
+      const area = rect.width * rect.height;
+      const centeredScore =
+        rect.left < window.innerWidth * 0.7 && rect.right > window.innerWidth * 0.1 ? 1 : 0;
+
+      return {
+        area: area + centeredScore,
+        url: image.currentSrc || image.src
+      };
+    })
+    .sort((left, right) => right.area - left.area);
+
+  return [...new Set(candidates.map((item) => item.url))];
 }
 
 function createDownloadButton() {
   const button = document.createElement("button");
   button.id = EXTENSION_BUTTON_ID;
   button.type = "button";
-  button.className = "lv-btn lv-btn-size-default lv-btn-shape-square left-button-a0UMQ4";
+  button.className = "lv-btn lv-btn-size-default lv-btn-shape-square";
   button.setAttribute("aria-label", "下载图片");
   button.style.cssText = [
     "margin-left: 8px",
@@ -77,7 +120,7 @@ function createDownloadButton() {
     "transform: translateY(0)"
   ].join(";");
   button.innerHTML = `
-    <div class="icon-wrapper-g8WRsR">
+    <div class="jimeng-image-downloader-icon">
       <svg width="1em" height="1em" viewBox="0 0 24 24" preserveAspectRatio="xMidYMid meet" fill="none" role="presentation" xmlns="http://www.w3.org/2000/svg" class="">
         <g>
           <path data-follow-fill="currentColor" d="M12 2a1 1 0 0 1 1 1v10.312l4.023-4.021a1 1 0 0 1 1.414 1.414l-5.73 5.728a1 1 0 0 1-1.414 0l-5.73-5.728A1 1 0 1 1 6.977 9.29L11 13.312V3a1 1 0 0 1 1-1ZM3 20.002a1 1 0 0 1 1-1L20 19a1 1 0 0 1 0 2l-16 .002a1 1 0 0 1-1-1Z" clip-rule="evenodd" fill-rule="evenodd" fill="currentColor"></path>
@@ -155,7 +198,7 @@ function createDownloadButton() {
   });
 
   button.addEventListener("click", async () => {
-    const urls = evaluateXPath(IMAGE_URL_XPATH);
+    const urls = findImageUrls();
 
     if (!urls.length) {
       setButtonStatus(button, "未找到图片");
@@ -257,8 +300,9 @@ function applyButtonVisual(button, visual) {
 }
 
 function mountButton() {
-  const container = findPublishContainer();
-  if (!container || container.querySelector(`#${EXTENSION_BUTTON_ID}`)) {
+  const nativeDownloadButton = findNativeDownloadButton();
+  const container = nativeDownloadButton?.parentElement;
+  if (!nativeDownloadButton || !container || container.querySelector(`#${EXTENSION_BUTTON_ID}`)) {
     return;
   }
 
@@ -268,7 +312,7 @@ function mountButton() {
   container.style.gap = "8px";
   container.style.flexWrap = "nowrap";
 
-  container.appendChild(createDownloadButton());
+  nativeDownloadButton.insertAdjacentElement("beforebegin", createDownloadButton());
 }
 
 const observer = new MutationObserver(() => {
