@@ -22,20 +22,14 @@ del /Q "%TEMP_PS1%" >nul 2>nul
 
 if exist "%SUCCESS_FLAG%" (
   del /Q "%SUCCESS_FLAG%" >nul 2>nul
-  echo.
-  echo Update complete. Please reload the extension in Chrome.
   pause
   exit /b 0
 )
 
 if not "%EXIT_CODE%"=="0" (
-  echo.
-  echo Update failed. Please check the messages above.
   pause
   exit /b %EXIT_CODE%
 )
 
-echo.
-echo Update complete. Please reload the extension in Chrome.
 pause
 exit /b 0
