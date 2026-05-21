@@ -58,28 +58,48 @@ function Resolve-DestinationPath {
   return [System.IO.Path]::GetFullPath($cleanPath)
 }
 
-function Get-RepositoryWebUrl {
-  param([string]$Url)
-
-  if ($Url.EndsWith(".git")) {
-    return $Url.Substring(0, $Url.Length - 4)
-  }
-
-  return $Url
+function Get-PortableGitDownloadUrl {
+  return "https://mirrors.huaweicloud.com/git-for-windows/v2.54.0.windows.1/MinGit-2.54.0-64-bit.zip"
 }
 
-function Get-ArchiveDownloadUrl {
+function Install-BundledGit {
   param(
-    [string]$Url,
-    [string]$BranchName
+    [string]$BasePath,
+    [string]$TempRoot
   )
 
-  $repositoryWebUrl = Get-RepositoryWebUrl -Url $Url
-  return "$repositoryWebUrl/repository/archive/$BranchName.zip"
+  $gitRoot = Join-Path $BasePath "tools\git"
+  $zipPath = Join-Path $TempRoot "mingit.zip"
+  $extractPath = Join-Path $TempRoot "mingit"
+  $downloadUrl = Get-PortableGitDownloadUrl
+
+  Write-Step "正在下载便携版 Git..."
+  Write-Step $downloadUrl
+  Invoke-WebRequest -Uri $downloadUrl -OutFile $zipPath -UseBasicParsing
+
+  Write-Step "正在安装便携版 Git..."
+  Remove-PathSafely -Path $gitRoot
+  New-Item -ItemType Directory -Path $extractPath | Out-Null
+  Expand-Archive -LiteralPath $zipPath -DestinationPath $extractPath -Force
+  New-Item -ItemType Directory -Path (Split-Path -Parent $gitRoot) -Force | Out-Null
+  New-Item -ItemType Directory -Path $gitRoot -Force | Out-Null
+  Get-ChildItem -LiteralPath $extractPath -Force | ForEach-Object {
+    Move-Item -LiteralPath $_.FullName -Destination $gitRoot -Force
+  }
+
+  $gitExe = Get-BundledGitPath -BasePath $BasePath
+  if (-not (Test-Path -LiteralPath $gitExe)) {
+    throw "便携版 Git 安装完成后，仍未找到 git.exe。"
+  }
+
+  return $gitExe
 }
 
-function Get-AvailableGitExecutable {
-  param([string]$BasePath)
+function Resolve-GitExecutable {
+  param(
+    [string]$BasePath,
+    [string]$TempRoot
+  )
 
   $bundledGit = Get-BundledGitPath -BasePath $BasePath
   if (Test-Path -LiteralPath $bundledGit) {
@@ -91,62 +111,7 @@ function Get-AvailableGitExecutable {
     return $systemGit.Source
   }
 
-  return $null
-}
-
-function Copy-DirectoryContents {
-  param(
-    [string]$SourcePath,
-    [string]$DestinationPath
-  )
-
-  Get-ChildItem -LiteralPath $SourcePath -Force | ForEach-Object {
-    $targetPath = Join-Path $DestinationPath $_.Name
-
-    if ($_.PSIsContainer) {
-      Copy-Item -LiteralPath $_.FullName -Destination $targetPath -Recurse -Force
-      return
-    }
-
-    Copy-Item -LiteralPath $_.FullName -Destination $targetPath -Force
-  }
-}
-
-function Update-FromArchive {
-  param(
-    [string]$Url,
-    [string]$BranchName,
-    [string]$DestinationRoot,
-    [string]$TempRoot
-  )
-
-  $archiveUrl = Get-ArchiveDownloadUrl -Url $Url -BranchName $BranchName
-  $archivePath = Join-Path $TempRoot "repo.zip"
-  $extractPath = Join-Path $TempRoot "archive"
-
-  Write-Step "未检测到可用的 Git，改为直接下载压缩包更新..."
-  Write-Step "正在下载更新压缩包..."
-  Write-Step $archiveUrl
-  Invoke-WebRequest -Uri $archiveUrl -OutFile $archivePath -UseBasicParsing
-
-  Write-Step "正在解压更新文件..."
-  New-Item -ItemType Directory -Path $extractPath | Out-Null
-  Expand-Archive -LiteralPath $archivePath -DestinationPath $extractPath -Force
-
-  $manifestFile = Get-ChildItem -LiteralPath $extractPath -Recurse -File -Filter "manifest.json" | Select-Object -First 1
-  if ($null -eq $manifestFile) {
-    throw "压缩包中没有找到 manifest.json，无法确认插件目录。"
-  }
-
-  $sourceRoot = Split-Path -Parent $manifestFile.FullName
-
-  Write-Step "正在清理旧文件..."
-  Get-ChildItem -LiteralPath $DestinationRoot -Force | Where-Object { $_.Name -ne ".git" } | ForEach-Object {
-    Remove-PathSafely -Path $_.FullName
-  }
-
-  Write-Step "正在复制新文件..."
-  Copy-DirectoryContents -SourcePath $sourceRoot -DestinationPath $DestinationRoot
+  return Install-BundledGit -BasePath $BasePath -TempRoot $TempRoot
 }
 
 $resolvedDestination = Resolve-DestinationPath -Path $DestinationPath
@@ -157,55 +122,53 @@ if (-not (Test-Path -LiteralPath $manifestPath)) {
   throw "没有在当前目录找到 manifest.json。请把 update.bat 放在插件根目录后再运行。"
 }
 
+if (-not (Test-Path -LiteralPath $gitDirPath)) {
+  throw "没有在当前目录找到 .git。这个更新脚本只适用于已经包含 Git 仓库的安装包。"
+}
+
 $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("jimeng-image-downloader-" + [System.Guid]::NewGuid().ToString("N"))
 
 try {
   Write-Step "正在准备临时目录..."
   New-Item -ItemType Directory -Path $tempRoot | Out-Null
+  $gitExe = Resolve-GitExecutable -BasePath $resolvedDestination -TempRoot $tempRoot
 
-  $gitExe = Get-AvailableGitExecutable -BasePath $resolvedDestination
-  $canUseGitUpdate = ($null -ne $gitExe) -and (Test-Path -LiteralPath $gitDirPath)
+  Write-Step "正在使用 Git：$gitExe"
+  Write-Step "正在检查仓库状态..."
+  & $gitExe -C $resolvedDestination rev-parse --is-inside-work-tree
+  if ($LASTEXITCODE -ne 0) {
+    throw "当前目录不是有效的 Git 仓库。"
+  }
 
-  if ($canUseGitUpdate) {
-    Write-Step "正在使用 Git：$gitExe"
-    Write-Step "正在检查仓库状态..."
-    & $gitExe -C $resolvedDestination rev-parse --is-inside-work-tree
+  Write-Step "正在设置更新源..."
+  & $gitExe -C $resolvedDestination remote > $null
+  if ($LASTEXITCODE -ne 0) {
+    throw "无法读取 Git 远端配置。"
+  }
+
+  $remoteList = (& $gitExe -C $resolvedDestination remote) | ForEach-Object { $_.Trim() } | Where-Object { $_ }
+  if ($remoteList -notcontains $RemoteName) {
+    & $gitExe -C $resolvedDestination remote add $RemoteName $RepositoryUrl
     if ($LASTEXITCODE -ne 0) {
-      throw "当前目录不是有效的 Git 仓库。"
+      throw "无法创建远端 $RemoteName。"
     }
+  }
 
-    Write-Step "正在设置更新源..."
-    & $gitExe -C $resolvedDestination remote > $null
-    if ($LASTEXITCODE -ne 0) {
-      throw "无法读取 Git 远端配置。"
-    }
+  & $gitExe -C $resolvedDestination remote set-url $RemoteName $RepositoryUrl
+  if ($LASTEXITCODE -ne 0) {
+    throw "无法把远端 $RemoteName 设置为 HTTPS 地址。"
+  }
 
-    $remoteList = (& $gitExe -C $resolvedDestination remote) | ForEach-Object { $_.Trim() } | Where-Object { $_ }
-    if ($remoteList -notcontains $RemoteName) {
-      & $gitExe -C $resolvedDestination remote add $RemoteName $RepositoryUrl
-      if ($LASTEXITCODE -ne 0) {
-        throw "无法创建远端 $RemoteName。"
-      }
-    }
+  Write-Step "正在拉取最新版本..."
+  & $gitExe -C $resolvedDestination pull --ff-only $RemoteName $Branch
+  if ($LASTEXITCODE -ne 0) {
+    throw "git pull 执行失败。"
+  }
 
-    & $gitExe -C $resolvedDestination remote set-url $RemoteName $RepositoryUrl
-    if ($LASTEXITCODE -ne 0) {
-      throw "无法把远端 $RemoteName 设置为 HTTPS 地址。"
-    }
-
-    Write-Step "正在拉取最新版本..."
-    & $gitExe -C $resolvedDestination pull --ff-only $RemoteName $Branch
-    if ($LASTEXITCODE -ne 0) {
-      throw "git pull 执行失败。"
-    }
-
-    Write-Step "正在清理已删除的旧文件..."
-    & $gitExe -C $resolvedDestination clean -fd
-    if ($LASTEXITCODE -ne 0) {
-      throw "git clean 执行失败。"
-    }
-  } else {
-    Update-FromArchive -Url $RepositoryUrl -BranchName $Branch -DestinationRoot $resolvedDestination -TempRoot $tempRoot
+  Write-Step "正在清理已删除的旧文件..."
+  & $gitExe -C $resolvedDestination clean -fd
+  if ($LASTEXITCODE -ne 0) {
+    throw "git clean 执行失败。"
   }
 
   Write-Step "更新完成。"
@@ -218,7 +181,7 @@ try {
 } catch {
   Write-Error $_
   Write-Host ""
-  Write-Host "如果提示网络失败，请确认电脑可以访问 Gitee。"
+  Write-Host "如果提示网络失败，请确认电脑可以访问 Gitee 和华为云镜像。"
   Write-Host "如果提示文件被占用，请先关闭 Chrome 里的扩展详情页，再重新运行 update.bat。"
   Write-Host "如果你手动修改过插件目录里的文件，这次更新会把这些改动覆盖掉。"
   exit 1
