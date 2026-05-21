@@ -62,6 +62,60 @@ function Get-PortableGitDownloadUrl {
   return "https://mirrors.huaweicloud.com/git-for-windows/v2.54.0.windows.1/MinGit-2.54.0-64-bit.zip"
 }
 
+function Download-FileWithProgress {
+  param(
+    [string]$Url,
+    [string]$DestinationPath
+  )
+
+  $request = [System.Net.HttpWebRequest]::Create($Url)
+  $request.AutomaticDecompression = [System.Net.DecompressionMethods]::GZip -bor [System.Net.DecompressionMethods]::Deflate
+
+  $response = $null
+  $responseStream = $null
+  $fileStream = $null
+
+  try {
+    $response = $request.GetResponse()
+    $responseStream = $response.GetResponseStream()
+    $fileStream = [System.IO.File]::Create($DestinationPath)
+
+    $buffer = New-Object byte[] 65536
+    [long]$totalBytes = $response.ContentLength
+    [long]$downloadedBytes = 0
+    [int]$lastPercent = -1
+
+    while (($bytesRead = $responseStream.Read($buffer, 0, $buffer.Length)) -gt 0) {
+      $fileStream.Write($buffer, 0, $bytesRead)
+      $downloadedBytes += $bytesRead
+
+      if ($totalBytes -gt 0) {
+        $percent = [int][Math]::Floor(($downloadedBytes * 100) / $totalBytes)
+        if ($percent -ne $lastPercent) {
+          Write-Progress -Activity "正在下载便携版 Git" -Status "$percent% ($downloadedBytes / $totalBytes 字节)" -PercentComplete $percent
+          $lastPercent = $percent
+        }
+      } else {
+        Write-Progress -Activity "正在下载便携版 Git" -Status "已下载 $downloadedBytes 字节" -PercentComplete 0
+      }
+    }
+
+    Write-Progress -Activity "正在下载便携版 Git" -Completed
+  } finally {
+    if ($null -ne $fileStream) {
+      $fileStream.Dispose()
+    }
+
+    if ($null -ne $responseStream) {
+      $responseStream.Dispose()
+    }
+
+    if ($null -ne $response) {
+      $response.Dispose()
+    }
+  }
+}
+
 function Install-BundledGit {
   param(
     [string]$BasePath,
@@ -75,7 +129,7 @@ function Install-BundledGit {
 
   Write-Step "正在下载便携版 Git..."
   Write-Step $downloadUrl
-  Invoke-WebRequest -Uri $downloadUrl -OutFile $zipPath -UseBasicParsing
+  Download-FileWithProgress -Url $downloadUrl -DestinationPath $zipPath
 
   Write-Step "正在安装便携版 Git..."
   Remove-PathSafely -Path $gitRoot
