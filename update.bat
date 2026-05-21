@@ -10,7 +10,7 @@ del /Q "%SUCCESS_FLAG%" >nul 2>nul
 
 copy /Y "%SCRIPT_DIR%update.ps1" "%TEMP_PS1%" >nul
 if errorlevel 1 (
-  echo 无法准备更新脚本。
+  echo Failed to prepare update script.
   pause
   exit /b 1
 )
@@ -23,19 +23,19 @@ del /Q "%TEMP_PS1%" >nul 2>nul
 if exist "%SUCCESS_FLAG%" (
   del /Q "%SUCCESS_FLAG%" >nul 2>nul
   echo.
-  echo 更新完成。
+  echo Update complete. Please reload the extension in Chrome.
   pause
   exit /b 0
 )
 
 if not "%EXIT_CODE%"=="0" (
   echo.
-  echo 更新失败。
+  echo Update failed. Please check the messages above.
   pause
   exit /b %EXIT_CODE%
 )
 
 echo.
-echo 更新完成。
+echo Update complete. Please reload the extension in Chrome.
 pause
 exit /b 0

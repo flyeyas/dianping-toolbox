@@ -1,18 +1,20 @@
 param(
-  [string]$RepositoryUrl = "https://gitee.com/zui216/jimeng-image-downloader",
+  [string]$RepositoryUrl = "https://gitee.com/zui216/jimeng-image-downloader.git",
+  [string]$RemoteName = "gitee",
   [string]$Branch = "main",
   [string]$DestinationPath = $PSScriptRoot,
   [string]$SuccessFlagPath = ""
 )
 
 $ErrorActionPreference = "Stop"
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
 function Write-Step {
   param([string]$Message)
   Write-Host "[jimeng-image-downloader] $Message"
 }
 
-function Remove-DirectorySafely {
+function Remove-PathSafely {
   param([string]$Path)
 
   if (Test-Path -LiteralPath $Path) {
@@ -30,6 +32,32 @@ function Get-BundledGitPath {
   return Join-Path $BasePath "tools\git\cmd\git.exe"
 }
 
+function Resolve-DestinationPath {
+  param([string]$Path)
+
+  if ($null -eq $Path) {
+    $cleanPath = ""
+  } else {
+    $cleanPath = $Path.Trim()
+  }
+
+  $cleanPath = $cleanPath.Trim('"')
+
+  if ([string]::IsNullOrWhiteSpace($cleanPath)) {
+    throw "The destination path is empty."
+  }
+
+  while ($cleanPath.Length -gt 3 -and ($cleanPath.EndsWith("\") -or $cleanPath.EndsWith("/"))) {
+    $cleanPath = $cleanPath.Substring(0, $cleanPath.Length - 1)
+  }
+
+  if ($cleanPath.Length -eq 2 -and $cleanPath[1] -eq ':') {
+    $cleanPath += '\'
+  }
+
+  return [System.IO.Path]::GetFullPath($cleanPath)
+}
+
 function Find-MinGitAssetUrl {
   $releaseApi = "https://api.github.com/repos/git-for-windows/git/releases/latest"
   $headers = @{
@@ -43,7 +71,7 @@ function Find-MinGitAssetUrl {
     }
   }
 
-  throw "未找到 Git for Windows 最新版本中的 MinGit 64 位压缩包。"
+  throw "Could not find the latest MinGit 64-bit zip from Git for Windows."
 }
 
 function Install-BundledGit {
@@ -57,11 +85,12 @@ function Install-BundledGit {
   $extractPath = Join-Path $TempRoot "mingit"
   $downloadUrl = Find-MinGitAssetUrl
 
-  Write-Step "正在下载内置 Git：$downloadUrl"
+  Write-Step "Downloading portable Git..."
+  Write-Step $downloadUrl
   Invoke-WebRequest -Uri $downloadUrl -OutFile $zipPath -UseBasicParsing
 
-  Write-Step "正在安装内置 Git 到 $gitRoot"
-  Remove-DirectorySafely -Path $gitRoot
+  Write-Step "Installing portable Git..."
+  Remove-PathSafely -Path $gitRoot
   New-Item -ItemType Directory -Path $extractPath | Out-Null
   Expand-Archive -LiteralPath $zipPath -DestinationPath $extractPath -Force
   New-Item -ItemType Directory -Path (Split-Path -Parent $gitRoot) -Force | Out-Null
@@ -72,7 +101,7 @@ function Install-BundledGit {
 
   $gitExe = Get-BundledGitPath -BasePath $BasePath
   if (-not (Test-Path -LiteralPath $gitExe)) {
-    throw "内置 Git 安装完成后，仍未找到 git.exe。"
+    throw "git.exe was not found after portable Git installation."
   }
 
   return $gitExe
@@ -97,79 +126,79 @@ function Resolve-GitExecutable {
   return Install-BundledGit -BasePath $BasePath -TempRoot $TempRoot
 }
 
-function Resolve-DestinationPath {
-  param([string]$Path)
+$resolvedDestination = Resolve-DestinationPath -Path $DestinationPath
+$manifestPath = Join-Path $resolvedDestination "manifest.json"
+$gitDirPath = Join-Path $resolvedDestination ".git"
 
-  if ($null -eq $Path) {
-    $cleanPath = ""
-  } else {
-    $cleanPath = $Path.Trim()
-  }
-
-  $cleanPath = $cleanPath.Trim('"')
-
-  if ([string]::IsNullOrWhiteSpace($cleanPath)) {
-    throw "目标路径为空。"
-  }
-
-  while ($cleanPath.Length -gt 3 -and ($cleanPath.EndsWith("\") -or $cleanPath.EndsWith("/"))) {
-    $cleanPath = $cleanPath.Substring(0, $cleanPath.Length - 1)
-  }
-
-  if ($cleanPath.Length -eq 2 -and $cleanPath[1] -eq ':') {
-    $cleanPath += '\'
-  }
-
-  return [System.IO.Path]::GetFullPath($cleanPath)
+if (-not (Test-Path -LiteralPath $manifestPath)) {
+  throw "manifest.json was not found in the current folder. Put update.bat in the extension root folder and run it again."
 }
 
-$resolvedDestination = Resolve-DestinationPath -Path $DestinationPath
+if (-not (Test-Path -LiteralPath $gitDirPath)) {
+  throw ".git was not found in the current folder. This updater only works with a package that already includes the Git repository."
+}
+
 $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("jimeng-image-downloader-" + [System.Guid]::NewGuid().ToString("N"))
-$clonePath = Join-Path $tempRoot "clone"
 
 try {
-  Write-Step "正在准备临时目录..."
+  Write-Step "Preparing temporary folder..."
   New-Item -ItemType Directory -Path $tempRoot | Out-Null
   $gitExe = Resolve-GitExecutable -BasePath $resolvedDestination -TempRoot $tempRoot
 
-  Write-Step "正在使用 Git：$gitExe"
-  Write-Step "正在从 $RepositoryUrl.git 拉取最新代码..."
-  & $gitExe clone --depth 1 --branch $Branch ($RepositoryUrl + ".git") $clonePath
+  Write-Step "Using Git: $gitExe"
+  Write-Step "Checking repository state..."
+  & $gitExe -C $resolvedDestination rev-parse --is-inside-work-tree
   if ($LASTEXITCODE -ne 0) {
-    throw "git clone 执行失败。"
+    throw "The current folder is not a valid Git repository."
   }
 
-  $sourceRoot = Get-Item -LiteralPath $clonePath
-
-  Write-Step "正在复制文件到 $resolvedDestination"
-  Get-ChildItem -LiteralPath $sourceRoot.FullName -Force | ForEach-Object {
-    if ($_.Name -eq ".git") {
-      return
-    }
-
-    $targetPath = Join-Path $resolvedDestination $_.Name
-
-    if ($_.PSIsContainer) {
-      Remove-DirectorySafely -Path $targetPath
-      Copy-Item -LiteralPath $_.FullName -Destination $targetPath -Recurse -Force
-      return
-    }
-
-    Copy-Item -LiteralPath $_.FullName -Destination $targetPath -Force
+  Write-Step "Configuring remote..."
+  & $gitExe -C $resolvedDestination remote > $null
+  if ($LASTEXITCODE -ne 0) {
+    throw "Failed to read Git remotes."
   }
 
-  Write-Step "更新完成。"
+  $remoteList = (& $gitExe -C $resolvedDestination remote) | ForEach-Object { $_.Trim() } | Where-Object { $_ }
+  if ($remoteList -notcontains $RemoteName) {
+    & $gitExe -C $resolvedDestination remote add $RemoteName $RepositoryUrl
+    if ($LASTEXITCODE -ne 0) {
+      throw "Failed to create remote $RemoteName."
+    }
+  }
+
+  & $gitExe -C $resolvedDestination remote set-url $RemoteName $RepositoryUrl
+  if ($LASTEXITCODE -ne 0) {
+    throw "Failed to set remote $RemoteName to the HTTPS URL."
+  }
+
+  Write-Step "Pulling latest version..."
+  & $gitExe -C $resolvedDestination pull --ff-only $RemoteName $Branch
+  if ($LASTEXITCODE -ne 0) {
+    throw "git pull failed."
+  }
+
+  Write-Step "Cleaning removed files..."
+  & $gitExe -C $resolvedDestination clean -fd
+  if ($LASTEXITCODE -ne 0) {
+    throw "git clean failed."
+  }
+
+  Write-Step "Update complete."
   if (-not [string]::IsNullOrWhiteSpace($SuccessFlagPath)) {
     Set-Content -LiteralPath $SuccessFlagPath -Value "ok" -Encoding ASCII
   }
   exit 0
 } catch {
   Write-Error $_
+  Write-Host ""
+  Write-Host "If the network request failed, make sure this PC can access Gitee."
+  Write-Host "If a file is locked, close the Chrome extension details page and run update.bat again."
+  Write-Host "Any manual changes inside the extension folder will be overwritten by this update."
   exit 1
 } finally {
   try {
-    Remove-DirectorySafely -Path $tempRoot
+    Remove-PathSafely -Path $tempRoot
   } catch {
-    Write-Warning ("临时目录清理失败：" + $_.Exception.Message)
+    Write-Warning ("Failed to clean temporary folder: " + $_.Exception.Message)
   }
 }
