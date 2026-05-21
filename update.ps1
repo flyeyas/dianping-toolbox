@@ -1,3 +1,4 @@
+# Jimeng Image Downloader update script for Windows plugin installs.
 param(
   [string]$RepositoryUrl = "https://gitee.com/zui216/jimeng-image-downloader.git",
   [string]$RemoteName = "gitee",
