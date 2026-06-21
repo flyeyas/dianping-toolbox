@@ -1,4 +1,12 @@
 const pendingDownloadFilenames = new Map();
+const JIMENG_ORIGIN = "https://jimeng.jianying.com";
+const ALLOWED_IMAGE_HOSTS = [
+  "jimeng.jianying.com"
+];
+const ALLOWED_IMAGE_HOST_SUFFIXES = [
+  ".byteimg.com"
+];
+const LOG_PREFIX = "[jimeng-image-downloader]";
 
 chrome.downloads.onDeterminingFilename.addListener((downloadItem, suggest) => {
   const pendingFilename = pendingDownloadFilenames.get(downloadItem.id);
@@ -21,7 +29,34 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   const url = typeof message.url === "string" ? message.url.trim() : "";
   const pageTitle = typeof message.pageTitle === "string" ? message.pageTitle : "";
   if (!url) {
+    logWarn("download request rejected: empty image URL", {
+      sender: summarizeSender(sender)
+    });
     sendResponse({ ok: false, error: "No image URL found." });
+    return false;
+  }
+
+  logInfo("download request received", {
+    sender: summarizeSender(sender),
+    imageUrl: summarizeUrl(url),
+    pageTitle
+  });
+
+  if (!isTrustedSender(sender)) {
+    logWarn("download request rejected: untrusted sender", {
+      sender: summarizeSender(sender),
+      imageUrl: summarizeUrl(url)
+    });
+    sendResponse({ ok: false, error: "Untrusted sender." });
+    return false;
+  }
+
+  if (!isAllowedImageUrl(url)) {
+    logWarn("download request rejected: image URL is not allowed", {
+      sender: summarizeSender(sender),
+      imageUrl: summarizeUrl(url)
+    });
+    sendResponse({ ok: false, error: "Image URL is not allowed." });
     return false;
   }
 
@@ -30,15 +65,56 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse({ ok: true, downloadId });
     })
     .catch((error) => {
+      logError("download request failed", {
+        imageUrl: summarizeUrl(url),
+        error: error.message
+      });
       sendResponse({ ok: false, error: error.message });
     });
 
   return true;
 });
 
+function isTrustedSender(sender) {
+  const senderUrl = sender?.url || sender?.tab?.url || "";
+
+  try {
+    return new URL(senderUrl).origin === JIMENG_ORIGIN;
+  } catch (error) {
+    return false;
+  }
+}
+
+function isAllowedImageUrl(url) {
+  try {
+    const parsedUrl = new URL(url);
+    return (
+      parsedUrl.protocol === "https:" &&
+      (
+        ALLOWED_IMAGE_HOSTS.includes(parsedUrl.hostname) ||
+        ALLOWED_IMAGE_HOST_SUFFIXES.some((suffix) => parsedUrl.hostname.endsWith(suffix))
+      )
+    );
+  } catch (error) {
+    return false;
+  }
+}
+
 async function downloadAsExtensionFile(url, pageTitle) {
+  logInfo("fetch image started", {
+    imageUrl: summarizeUrl(url)
+  });
+
   const response = await fetch(url, {
     credentials: "omit"
+  });
+
+  logInfo("fetch image response received", {
+    imageUrl: summarizeUrl(url),
+    status: response.status,
+    ok: response.ok,
+    contentType: response.headers.get("content-type"),
+    contentLength: response.headers.get("content-length")
   });
 
   if (!response.ok) {
@@ -46,10 +122,27 @@ async function downloadAsExtensionFile(url, pageTitle) {
   }
 
   const sourceBlob = await response.blob();
+  logInfo("source image blob loaded", {
+    imageUrl: summarizeUrl(url),
+    type: sourceBlob.type,
+    size: sourceBlob.size
+  });
+
   const jpegBlob = await convertBlobToJpeg(sourceBlob);
+  logInfo("image converted to JPEG", {
+    type: jpegBlob.type,
+    size: jpegBlob.size
+  });
+
   const dataUrl = await blobToDataUrl(jpegBlob);
   const fileHash = await md5FromBlob(jpegBlob);
   const filename = buildFilename(pageTitle, fileHash);
+
+  logInfo("download file prepared", {
+    filename,
+    hash: fileHash,
+    dataUrlBytes: dataUrl.length
+  });
 
   return new Promise((resolve, reject) => {
     chrome.downloads.download(
@@ -62,11 +155,19 @@ async function downloadAsExtensionFile(url, pageTitle) {
       (downloadId) => {
         const runtimeError = chrome.runtime.lastError;
         if (runtimeError) {
+          logError("chrome.downloads.download failed", {
+            filename,
+            error: runtimeError.message
+          });
           reject(new Error(runtimeError.message));
           return;
         }
 
         pendingDownloadFilenames.set(downloadId, filename);
+        logInfo("chrome.downloads.download accepted", {
+          downloadId,
+          filename
+        });
 
         resolve(downloadId);
       }
@@ -122,6 +223,53 @@ function sanitizePathSegment(input) {
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 80);
+}
+
+function summarizeSender(sender) {
+  const senderUrl = sender?.url || sender?.tab?.url || "";
+  return {
+    origin: getUrlOrigin(senderUrl),
+    tabId: sender?.tab?.id,
+    frameId: sender?.frameId
+  };
+}
+
+function summarizeUrl(url) {
+  try {
+    const parsedUrl = new URL(url);
+    return {
+      origin: parsedUrl.origin,
+      hostname: parsedUrl.hostname,
+      pathname: parsedUrl.pathname,
+      hasQuery: parsedUrl.search.length > 0,
+      queryLength: parsedUrl.search.length
+    };
+  } catch (error) {
+    return {
+      invalidUrl: true,
+      valueLength: typeof url === "string" ? url.length : 0
+    };
+  }
+}
+
+function getUrlOrigin(url) {
+  try {
+    return new URL(url).origin;
+  } catch (error) {
+    return "";
+  }
+}
+
+function logInfo(message, details = {}) {
+  console.info(LOG_PREFIX, message, details);
+}
+
+function logWarn(message, details = {}) {
+  console.warn(LOG_PREFIX, message, details);
+}
+
+function logError(message, details = {}) {
+  console.error(LOG_PREFIX, message, details);
 }
 
 async function md5FromBlob(blob) {

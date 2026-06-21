@@ -13,7 +13,8 @@
 
 ## 功能说明
 
-- 仅在 `https://jimeng.jianying.com/*` 页面生效
+- 仅在 `https://jimeng.jianying.com/*` 页面注入按钮
+- 支持下载即梦实际图片地址所在的 `https://*.byteimg.com/*` 资源
 - 在页面按钮区域插入一个蓝色“下载图片”按钮
 - 点击按钮后，提取目标图片地址并发起下载
 - 下载记录显示为由扩展发起
@@ -38,7 +39,7 @@
 5. 选择当前目录：
 
 ```text
-/Users/flyeyas/items/my-script/jimeng-image-downloader
+/Users/flyeyas/items/chrome-extension/jimeng-image-downloader/jimeng-image-downloader
 ```
 
 ## 使用方法
@@ -110,6 +111,7 @@ tools/git/
 
 - 本插件依赖当前页面的类名和 DOM 结构
 - 如果即梦页面更新了类名，按钮可能不显示，或者无法提取图片
+- 如果即梦后续更换图片 CDN 域名，需要同步更新 `manifest.json` 和 `background.js` 里的允许域名
 - 如果浏览器开启了“下载前询问每个文件的保存位置”，可能仍会弹出保存提示
 - 如果安装了第三方下载接管工具，实际下载行为可能受浏览器环境影响
 - 转换为 JPG 后，原图透明区域会自动填充为白色背景

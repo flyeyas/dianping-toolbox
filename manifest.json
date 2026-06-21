@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "即梦图片下载",
-  "version": "1.1.0",
+  "version": "1.1.2",
   "description": "在即梦页面中一键下载目标图片，自动转换为 JPG 并按网页标题归档。",
   "permissions": [
     "activeTab",
@@ -10,7 +10,8 @@
     "downloads"
   ],
   "host_permissions": [
-    "https://jimeng.jianying.com/*"
+    "https://jimeng.jianying.com/*",
+    "https://*.byteimg.com/*"
   ],
   "background": {
     "service_worker": "background.js"
