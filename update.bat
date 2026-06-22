@@ -3,8 +3,8 @@ setlocal
 
 set "SCRIPT_DIR=%~dp0"
 set "DEST_DIR=%SCRIPT_DIR:~0,-1%"
-set "TEMP_PS1=%TEMP%\jimeng-image-downloader-update.ps1"
-set "SUCCESS_FLAG=%TEMP%\jimeng-image-downloader-update-success.txt"
+set "TEMP_PS1=%TEMP%\dianping-toolbox-update.ps1"
+set "SUCCESS_FLAG=%TEMP%\dianping-toolbox-update-success.txt"
 
 del /Q "%SUCCESS_FLAG%" >nul 2>nul
 

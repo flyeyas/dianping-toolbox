@@ -1,6 +1,6 @@
-﻿# Jimeng Image Downloader update script for Windows plugin installs.
+﻿# Dianping Toolbox update script for Windows plugin installs.
 param(
-  [string]$RepositoryUrl = "https://gitee.com/zui216/jimeng-image-downloader.git",
+  [string]$RepositoryUrl = "https://gitee.com/zui216/dianping-toolbox.git",
   [string]$RemoteName = "gitee",
   [string]$Branch = "main",
   [string]$DestinationPath = $PSScriptRoot,
@@ -12,7 +12,7 @@ $ErrorActionPreference = "Stop"
 
 function Write-Step {
   param([string]$Message)
-  Write-Host "[jimeng-image-downloader] $Message"
+  Write-Host "[dianping-toolbox] $Message"
 }
 
 function Remove-PathSafely {
@@ -181,7 +181,7 @@ if (-not (Test-Path -LiteralPath $gitDirPath)) {
   throw "没有在当前目录找到 .git。这个更新脚本只适用于已经包含 Git 仓库的安装包。"
 }
 
-$tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("jimeng-image-downloader-" + [System.Guid]::NewGuid().ToString("N"))
+$tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("dianping-toolbox-" + [System.Guid]::NewGuid().ToString("N"))
 
 try {
   Write-Step "正在准备临时目录..."
