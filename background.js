@@ -1,5 +1,5 @@
 const DOUBAO_SIDE_PANEL_PATH = "doubao-sidepanel.html";
-const JIMENG_POPUP_PATH = "jimeng-popup.html";
+const JIMENG_SIDE_PANEL_PATH = "jimeng-sidepanel.html";
 const UNSUPPORTED_POPUP_PATH = "unsupported-popup.html";
 const DOUBAO_URL_PATTERN = /^https:\/\/(?:www\.)?doubao\.com\//;
 const JIMENG_URL_PATTERN = /^https:\/\/jimeng\.jianying\.com\//;
@@ -57,10 +57,10 @@ async function updateTabUi(tabId, knownUrl = "") {
     chrome.action.setPopup({ tabId, popup: options.popup })
   ];
 
-  if (mode === "doubao") {
+  if (mode === "doubao" || mode === "jimeng") {
     updates.push(chrome.sidePanel.setOptions({
       tabId,
-      path: DOUBAO_SIDE_PANEL_PATH,
+      path: mode === "doubao" ? DOUBAO_SIDE_PANEL_PATH : JIMENG_SIDE_PANEL_PATH,
       enabled: true
     }));
   } else {
@@ -113,8 +113,8 @@ function getUiOptions(mode) {
 
   if (mode === "jimeng") {
     return {
-      popup: JIMENG_POPUP_PATH,
-      title: "打开即梦图片工具"
+      popup: "",
+      title: "打开即梦图片提示词侧边栏"
     };
   }
 

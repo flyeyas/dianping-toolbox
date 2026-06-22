@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "豆包即梦创作工具箱",
   "version": "1.0.0",
-  "description": "合并豆包美食笔记提示词和即梦图片下载工具，根据当前授权链接自动切换功能与界面。",
+  "description": "合并豆包美食笔记提示词、即梦图片调整提示词和即梦图片下载工具，根据当前授权链接自动切换功能与界面。",
   "permissions": [
     "activeTab",
     "clipboardWrite",

@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>即梦图片提示词侧边栏</title>
+    <link rel="stylesheet" href="jimeng-sidepanel.css">
+  </head>
+  <body>
+    <header class="panel-header">
+      <div class="app-mark" aria-hidden="true">图</div>
+      <div>
+        <p class="eyebrow">大众点评图片优化</p>
+        <h1>即梦图片提示词</h1>
+      </div>
+    </header>
+
+    <main class="panel-main">
+      <label class="field preview-field">
+        <span>提示词</span>
+        <textarea id="prompt-preview" rows="22" spellcheck="false"></textarea>
+      </label>
+
+      <div class="actions" aria-label="提示词操作">
+        <button class="button primary" type="button" data-action="insert">填入即梦</button>
+        <button class="button" type="button" data-action="copy">复制提示词</button>
+      </div>
+    </main>
+
+    <footer class="panel-footer">
+      <button class="text-button" type="button" data-action="sample">恢复默认</button>
+      <p id="status" class="status" role="status" aria-live="polite"></p>
+    </footer>
+
+    <script src="jimeng-sidepanel.js"></script>
+  </body>
+</html>

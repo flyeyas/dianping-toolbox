@@ -1,4 +1,116 @@
-const EXTENSION_BUTTON_ID = "xpath-image-download-button";
+(() => {
+  if (window.__jimengToolboxContentLoaded) {
+    return;
+  }
+
+  window.__jimengToolboxContentLoaded = true;
+
+  const EXTENSION_BUTTON_ID = "jimeng-image-download-button";
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type !== "jimeng-insert-prompt") {
+    return false;
+  }
+
+  const prompt = typeof message.prompt === "string" ? message.prompt : "";
+  if (!prompt.trim()) {
+    sendResponse({ ok: false, error: "提示词为空。" });
+    return false;
+  }
+
+  sendResponse(insertIntoJimeng(prompt));
+  return false;
+});
+
+function insertIntoJimeng(text) {
+  const target = findJimengInput();
+  if (!target) {
+    return { ok: false, error: "没有找到即梦输入框。" };
+  }
+
+  target.focus();
+
+  if (target instanceof HTMLTextAreaElement || target instanceof HTMLInputElement) {
+    setNativeValue(target, text);
+    target.dispatchEvent(new InputEvent("input", {
+      bubbles: true,
+      inputType: "insertText",
+      data: text
+    }));
+    target.dispatchEvent(new Event("change", { bubbles: true }));
+    target.setSelectionRange(target.value.length, target.value.length);
+    return { ok: true };
+  }
+
+  if (target.isContentEditable || target.getAttribute("role") === "textbox") {
+    const selection = window.getSelection();
+    const range = document.createRange();
+    target.textContent = "";
+    range.selectNodeContents(target);
+    range.collapse(false);
+    selection.removeAllRanges();
+    selection.addRange(range);
+    document.execCommand("insertText", false, text);
+    target.dispatchEvent(new InputEvent("input", {
+      bubbles: true,
+      inputType: "insertText",
+      data: text
+    }));
+    return { ok: true };
+  }
+
+  return { ok: false, error: "即梦输入框类型不支持自动填入。" };
+}
+
+function findJimengInput() {
+  const candidates = [
+    ...document.querySelectorAll("textarea"),
+    ...document.querySelectorAll("input[type='text']"),
+    ...document.querySelectorAll("[contenteditable='true']"),
+    ...document.querySelectorAll("[role='textbox']")
+  ];
+
+  return candidates
+    .filter(isVisibleTextInput)
+    .sort((a, b) => scoreTextInput(b) - scoreTextInput(a))[0] || null;
+}
+
+function isVisibleTextInput(element) {
+  const rect = element.getBoundingClientRect();
+  const style = window.getComputedStyle(element);
+
+  return (
+    rect.width >= 120 &&
+    rect.height >= 20 &&
+    rect.bottom > 0 &&
+    rect.right > 0 &&
+    rect.top < window.innerHeight &&
+    rect.left < window.innerWidth &&
+    style.visibility !== "hidden" &&
+    style.display !== "none"
+  );
+}
+
+function scoreTextInput(element) {
+  const rect = element.getBoundingClientRect();
+  const areaScore = Math.min(rect.width * rect.height / 1000, 500);
+  const bottomScore = rect.top > window.innerHeight * 0.35 ? 120 : 0;
+  const centerScore = rect.left < window.innerWidth * 0.85 && rect.right > window.innerWidth * 0.15 ? 80 : 0;
+  const textareaScore = element instanceof HTMLTextAreaElement ? 100 : 0;
+  return areaScore + bottomScore + centerScore + textareaScore;
+}
+
+function setNativeValue(element, value) {
+  const prototype = Object.getPrototypeOf(element);
+  const descriptor = Object.getOwnPropertyDescriptor(prototype, "value");
+
+  if (descriptor?.set) {
+    descriptor.set.call(element, value);
+    return;
+  }
+
+  element.value = value;
+}
 
 function findNativeDownloadButton() {
   const buttons = Array.from(document.querySelectorAll('button[type="button"]'));
@@ -324,3 +436,4 @@ observer.observe(document.documentElement, {
   childList: true,
   subtree: true
 });
+})();
