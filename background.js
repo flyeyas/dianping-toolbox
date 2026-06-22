@@ -11,7 +11,7 @@ const ALLOWED_IMAGE_HOSTS = [
 const ALLOWED_IMAGE_HOST_SUFFIXES = [
   ".byteimg.com"
 ];
-const LOG_PREFIX = "[doubao-jimeng-toolbox]";
+const LOG_PREFIX = "[dianping-toolbox]";
 
 chrome.runtime.onInstalled.addListener(configureExtensionUi);
 chrome.runtime.onStartup.addListener(configureExtensionUi);
