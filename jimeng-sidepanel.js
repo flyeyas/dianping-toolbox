@@ -32,6 +32,13 @@ function bindEvents() {
       return;
     }
 
+    if (action === "setup") {
+      setStatus("正在设置即梦参数...");
+      const result = await applySettingsToActiveJimengTab();
+      setStatus(result.ok ? "即梦参数已执行设置。" : result.error);
+      return;
+    }
+
     if (action === "insert") {
       const prompt = getPrompt();
       const result = await insertPromptIntoActiveJimengTab(prompt);
@@ -50,7 +57,21 @@ function getPrompt() {
   return preview.value.trim() || DEFAULT_PROMPT;
 }
 
+async function applySettingsToActiveJimengTab() {
+  return sendMessageToActiveJimengTab(
+    { type: "jimeng-apply-settings" },
+    "无法注入即梦页面脚本。"
+  );
+}
+
 async function insertPromptIntoActiveJimengTab(prompt) {
+  return sendMessageToActiveJimengTab(
+    { type: "jimeng-insert-prompt", prompt },
+    "无法注入即梦页面脚本。"
+  );
+}
+
+async function sendMessageToActiveJimengTab(message, injectionError) {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab?.id) {
     return { ok: false, error: "没有找到当前标签页。" };
@@ -60,7 +81,7 @@ async function insertPromptIntoActiveJimengTab(prompt) {
     return { ok: false, error: "当前标签页不是即梦页面。" };
   }
 
-  let result = await sendInsertMessage(tab.id, prompt);
+  let result = await sendJimengMessage(tab.id, message);
   if (result.ok) {
     return result;
   }
@@ -71,18 +92,18 @@ async function insertPromptIntoActiveJimengTab(prompt) {
       files: ["jimeng-content.js"]
     });
   } catch (error) {
-    return { ok: false, error: "无法注入即梦页面脚本。" };
+    return { ok: false, error: injectionError };
   }
 
-  result = await sendInsertMessage(tab.id, prompt);
+  result = await sendJimengMessage(tab.id, message);
   return result.ok ? result : { ok: false, error: result.error || "没有找到即梦输入框。" };
 }
 
-function sendInsertMessage(tabId, prompt) {
+function sendJimengMessage(tabId, message) {
   return new Promise((resolve) => {
     chrome.tabs.sendMessage(
       tabId,
-      { type: "jimeng-insert-prompt", prompt },
+      message,
       (response) => {
         if (chrome.runtime.lastError) {
           resolve({ ok: false, error: "无法连接即梦页面。" });
