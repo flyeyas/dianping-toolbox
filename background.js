@@ -26,6 +26,12 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   }
 });
 
+chrome.action.onClicked.addListener((tab) => {
+  if (tab?.id && getUiMode(tab.url || "") !== "unsupported") {
+    chrome.sidePanel.open({ tabId: tab.id });
+  }
+});
+
 configureExtensionUi();
 
 async function configureExtensionUi() {
@@ -33,6 +39,12 @@ async function configureExtensionUi() {
     await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
   } catch (error) {
     logWarn("failed to configure side panel behavior", { error: error.message });
+  }
+
+  try {
+    await chrome.sidePanel.setOptions({ enabled: false });
+  } catch (error) {
+    logWarn("failed to disable global side panel", { error: error.message });
   }
 
   try {
