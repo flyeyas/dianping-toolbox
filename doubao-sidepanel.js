@@ -50,16 +50,17 @@ function bindEvents() {
       return;
     }
 
-    if (action === "insert") {
+    if (action === "insert" || action === "insert-submit") {
       const prompt = updatePreview();
-      const result = await insertPromptIntoActiveDoubaoTab(prompt);
+      const shouldSubmit = action === "insert-submit";
+      const result = await insertPromptIntoActiveDoubaoTab(prompt, shouldSubmit);
       if (!result.ok) {
         const copied = await copyText(prompt);
         setStatus(copied ? `${result.error} 已复制提示词。` : result.error);
         return;
       }
 
-      setStatus("已填入豆包输入框。");
+      setStatus(shouldSubmit ? "已填入并发送。" : "已填入豆包输入框。");
     }
   });
 }
@@ -96,7 +97,7 @@ function buildPrompt(restaurantName, dishes) {
 推荐菜：${cleanDishes}`;
 }
 
-async function insertPromptIntoActiveDoubaoTab(prompt) {
+async function insertPromptIntoActiveDoubaoTab(prompt, shouldSubmit = false) {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab?.id) {
     return { ok: false, error: "没有找到当前标签页。" };
@@ -106,7 +107,7 @@ async function insertPromptIntoActiveDoubaoTab(prompt) {
     return { ok: false, error: "当前标签页不是豆包页面。" };
   }
 
-  let result = await sendInsertMessage(tab.id, prompt);
+  let result = await sendInsertMessage(tab.id, prompt, shouldSubmit);
   if (result.ok) {
     return result;
   }
@@ -120,15 +121,15 @@ async function insertPromptIntoActiveDoubaoTab(prompt) {
     return { ok: false, error: "无法注入豆包页面脚本。" };
   }
 
-  result = await sendInsertMessage(tab.id, prompt);
+  result = await sendInsertMessage(tab.id, prompt, shouldSubmit);
   return result.ok ? result : { ok: false, error: result.error || "没有找到豆包输入框。" };
 }
 
-function sendInsertMessage(tabId, prompt) {
+function sendInsertMessage(tabId, prompt, shouldSubmit = false) {
   return new Promise((resolve) => {
     chrome.tabs.sendMessage(
       tabId,
-      { type: "doubao-food-note-insert-prompt", prompt },
+      { type: shouldSubmit ? "doubao-food-note-insert-submit-prompt" : "doubao-food-note-insert-prompt", prompt },
       (response) => {
         if (chrome.runtime.lastError) {
           resolve({ ok: false, error: "无法连接豆包页面。" });

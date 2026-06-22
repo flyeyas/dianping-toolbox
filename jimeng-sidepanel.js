@@ -1,5 +1,5 @@
 const DEFAULT_PROMPT = `调整每个图片：
-调整图片的拍照角度、拍摄距离，去掉图片中的小票，去掉图片中手，去掉图片中的人物元素，去掉图片中的水印，在图片上面加上吸引用户的涂鸦文案，文案中不要出现食物名字，文案中不要出现季节相关的描述，按着专业拍照的方式调整图片，调整比例3:4`;
+调整图片的拍照角度、拍摄距离，去掉图片中的小票，去掉图片中手，去掉图片中的人物元素，去掉图片中的水印，在图片上面加上吸引用户的涂鸦文案，文案中不要出现食物名字，文案中不要出现季节相关的描述，按着专业拍照的方式调整图片，每个图片只出一个调整版本，调整比例3:4`;
 
 const JIMENG_URL_PATTERN = /^https:\/\/jimeng\.jianying\.com\//;
 
@@ -39,16 +39,17 @@ function bindEvents() {
       return;
     }
 
-    if (action === "insert") {
+    if (action === "insert" || action === "insert-submit") {
       const prompt = getPrompt();
-      const result = await insertPromptIntoActiveJimengTab(prompt);
+      const shouldSubmit = action === "insert-submit";
+      const result = await insertPromptIntoActiveJimengTab(prompt, shouldSubmit);
       if (!result.ok) {
         const copied = await copyText(prompt);
         setStatus(copied ? `${result.error} 已复制提示词。` : result.error);
         return;
       }
 
-      setStatus("已填入即梦输入框。");
+      setStatus(shouldSubmit ? "已填入并发送。" : "已填入即梦输入框。");
     }
   });
 }
@@ -64,9 +65,9 @@ async function applySettingsToActiveJimengTab() {
   );
 }
 
-async function insertPromptIntoActiveJimengTab(prompt) {
+async function insertPromptIntoActiveJimengTab(prompt, shouldSubmit = false) {
   return sendMessageToActiveJimengTab(
-    { type: "jimeng-insert-prompt", prompt },
+    { type: shouldSubmit ? "jimeng-insert-submit-prompt" : "jimeng-insert-prompt", prompt },
     "无法注入即梦页面脚本。"
   );
 }

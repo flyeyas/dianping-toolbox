@@ -1,9 +1,11 @@
 (() => {
-  if (window.__jimengToolboxContentLoaded) {
+  const CONTENT_SCRIPT_VERSION = "2026-06-22-publish-button-gate";
+
+  if (window.__jimengToolboxContentLoaded === CONTENT_SCRIPT_VERSION) {
     return;
   }
 
-  window.__jimengToolboxContentLoaded = true;
+  window.__jimengToolboxContentLoaded = CONTENT_SCRIPT_VERSION;
 
   const EXTENSION_BUTTON_ID = "jimeng-image-download-button";
 
@@ -17,15 +19,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
-  if (message?.type === "jimeng-insert-prompt") {
+  if (message?.type === "jimeng-insert-prompt" || message?.type === "jimeng-insert-submit-prompt") {
     const prompt = typeof message.prompt === "string" ? message.prompt : "";
     if (!prompt.trim()) {
       sendResponse({ ok: false, error: "提示词为空。" });
       return false;
     }
 
-    sendResponse(insertIntoJimeng(prompt));
-    return false;
+    const result = insertIntoJimeng(prompt);
+    if (!result.ok || message.type !== "jimeng-insert-submit-prompt") {
+      sendResponse(result);
+      return false;
+    }
+
+    submitJimengPrompt().then(sendResponse);
+    return true;
   }
 
   return false;
@@ -71,6 +79,92 @@ function insertIntoJimeng(text) {
   return { ok: false, error: "即梦输入框类型不支持自动填入。" };
 }
 
+async function submitJimengPrompt() {
+  const input = findJimengInput();
+  const submitButton = await waitForJimengSubmitButton(input);
+  if (!submitButton) {
+    return { ok: false, error: "已填入提示词，但没有找到即梦发送按钮。" };
+  }
+
+  clickElement(submitButton);
+  return { ok: true };
+}
+
+function waitForJimengSubmitButton(input, timeout = 3000) {
+  const start = Date.now();
+
+  return new Promise((resolve) => {
+    const tick = () => {
+      const submitButton = findJimengSubmitButton(input);
+      if (submitButton) {
+        resolve(submitButton);
+        return;
+      }
+
+      if (Date.now() - start >= timeout) {
+        resolve(null);
+        return;
+      }
+
+      window.setTimeout(tick, 120);
+    };
+
+    tick();
+  });
+}
+
+function findJimengSubmitButton(input = findJimengInput()) {
+  const scopedButtons = input ? findButtonsNearInput(input) : [];
+  const textButtons = findSubmitButtonsByText();
+  const broadButtons = Array.from(document.querySelectorAll("button,[role='button'],[aria-label],[title]"));
+
+  return [...new Set([...scopedButtons, ...textButtons, ...broadButtons])]
+    .filter((element) => isUsableSubmitButton(element))
+    .filter((element) => hasSubmitIntent(element, input))
+    .sort((left, right) => scoreSubmitButton(right, input) - scoreSubmitButton(left, input))[0] || null;
+}
+
+function findButtonsNearInput(input) {
+  const containers = [];
+  let current = input;
+
+  for (let depth = 0; current && depth < 7; depth += 1) {
+    containers.push(current);
+    current = current.parentElement;
+  }
+
+  return containers.flatMap((container) => Array.from(container.querySelectorAll([
+    "button",
+    "[role='button']",
+    "[aria-label]",
+    "[title]",
+    "span",
+    "div"
+  ].join(","))))
+    .map(getClickableTarget)
+    .filter(Boolean);
+}
+
+function findSubmitButtonsByText() {
+  const keywords = [
+    "立即生成",
+    "开始生成",
+    "生成",
+    "发送",
+    "Generate",
+    "Send"
+  ].map(normalizeText);
+
+  return Array.from(document.querySelectorAll("button,[role='button'],span,div,[aria-label],[title]"))
+    .filter(isVisible)
+    .filter((element) => {
+      const label = normalizeText(getElementLabel(element));
+      return keywords.some((keyword) => label === keyword || label.includes(keyword));
+    })
+    .map(getClickableTarget)
+    .filter(Boolean);
+}
+
 function findJimengInput() {
   const candidates = [
     ...document.querySelectorAll("textarea"),
@@ -107,6 +201,140 @@ function scoreTextInput(element) {
   const centerScore = rect.left < window.innerWidth * 0.85 && rect.right > window.innerWidth * 0.15 ? 80 : 0;
   const textareaScore = element instanceof HTMLTextAreaElement ? 100 : 0;
   return areaScore + bottomScore + centerScore + textareaScore;
+}
+
+function isUsableSubmitButton(element) {
+  if (!(element instanceof HTMLElement)) {
+    return false;
+  }
+
+  if (element.id === EXTENSION_BUTTON_ID) {
+    return false;
+  }
+
+  const rect = element.getBoundingClientRect();
+  const style = window.getComputedStyle(element);
+  const disabled = element.matches("[disabled], [aria-disabled='true']");
+
+  return (
+    !disabled &&
+    rect.width >= 20 &&
+    rect.height >= 20 &&
+    rect.bottom > 0 &&
+    rect.right > 0 &&
+    rect.top < window.innerHeight &&
+    rect.left < window.innerWidth &&
+    style.visibility !== "hidden" &&
+    style.display !== "none" &&
+    style.pointerEvents !== "none"
+  );
+}
+
+function hasSubmitIntent(element, input) {
+  const label = getSubmitElementLabel(element);
+  const normalizedLabel = normalizeText(label);
+  const className = typeof element.className === "string" ? element.className : "";
+
+  if (hasBlockedSubmitIntent(normalizedLabel)) {
+    return false;
+  }
+
+  return (
+    /发送|生成|send|generate|submit/i.test(label) ||
+    /send|generate|submit|arrow|plane/i.test(className) ||
+    isLikelyIconSubmitButton(element, input)
+  );
+}
+
+function hasBlockedSubmitIntent(label) {
+  return /生成偏好|自动|下载|导出|上传|参考图|附件|文件|复制|设置|比例|模型|关闭|取消|清空|删除|历史|download|export|upload|attach|file|copy|setting|cancel|close|delete|history/i.test(label);
+}
+
+function isLikelyIconSubmitButton(element, input) {
+  if (!input || !element.querySelector("svg, img")) {
+    return false;
+  }
+
+  const rect = element.getBoundingClientRect();
+  const inputRect = input.getBoundingClientRect();
+
+  return (
+    rect.width <= 76 &&
+    rect.height <= 76 &&
+    rect.width >= 20 &&
+    rect.height >= 20 &&
+    isNearInput(element, input) &&
+    rect.left >= inputRect.left + inputRect.width * 0.52
+  );
+}
+
+function scoreSubmitButton(element, input) {
+  const label = getSubmitElementLabel(element);
+  const className = typeof element.className === "string" ? element.className : "";
+  const rect = element.getBoundingClientRect();
+  let score = 0;
+
+  if (/立即生成|开始生成|生成|generate/i.test(label)) {
+    score += 12;
+  }
+
+  if (/发送|send|submit/i.test(label)) {
+    score += 10;
+  }
+
+  if (/send|generate|submit|arrow|plane/i.test(className)) {
+    score += 4;
+  }
+
+  if (element.matches("button,[role='button']")) {
+    score += 3;
+  }
+
+  if (rect.width <= 160 && rect.height <= 90) {
+    score += 2;
+  }
+
+  if (input && isNearInput(element, input)) {
+    score += 8;
+  }
+
+  if (input && isRightSideOfInput(element, input)) {
+    score += 4;
+  }
+
+  return score;
+}
+
+function getSubmitElementLabel(element) {
+  return [
+    element.innerText,
+    element.textContent,
+    element.getAttribute?.("aria-label"),
+    element.getAttribute?.("title"),
+    element.getAttribute?.("data-testid"),
+    element.getAttribute?.("data-test-id"),
+    element.getAttribute?.("class")
+  ].filter(Boolean).join(" ");
+}
+
+function isNearInput(element, input) {
+  const elementRect = element.getBoundingClientRect();
+  const inputRect = input.getBoundingClientRect();
+  const elementCenterX = elementRect.left + elementRect.width / 2;
+  const elementCenterY = elementRect.top + elementRect.height / 2;
+  const inputCenterX = inputRect.left + inputRect.width / 2;
+  const inputCenterY = inputRect.top + inputRect.height / 2;
+
+  return (
+    Math.abs(elementCenterY - inputCenterY) <= Math.max(180, inputRect.height * 2.2) &&
+    Math.abs(elementCenterX - inputCenterX) <= Math.max(420, inputRect.width * 1.1)
+  );
+}
+
+function isRightSideOfInput(element, input) {
+  const elementRect = element.getBoundingClientRect();
+  const inputRect = input.getBoundingClientRect();
+  return elementRect.left >= inputRect.left + inputRect.width * 0.45;
 }
 
 function setNativeValue(element, value) {
@@ -757,11 +985,16 @@ function delay(ms) {
 }
 
 function findNativeDownloadButton() {
-  const buttons = Array.from(document.querySelectorAll('button[type="button"]'));
+  const buttons = Array.from(document.querySelectorAll([
+    "button",
+    "[role='button']"
+  ].join(",")));
 
   const candidates = buttons.filter((button) => {
     if (!(button instanceof HTMLButtonElement)) {
-      return false;
+      if (!(button instanceof HTMLElement)) {
+        return false;
+      }
     }
 
     if (!isVisible(button)) {
@@ -773,7 +1006,7 @@ function findNativeDownloadButton() {
     }
 
     const label = getButtonLabel(button);
-    return label === "下载";
+    return hasDownloadIntent(label);
   });
 
   candidates.sort((left, right) => scoreDownloadButton(right) - scoreDownloadButton(left));
@@ -781,17 +1014,48 @@ function findNativeDownloadButton() {
 }
 
 function getButtonLabel(button) {
-  const label = button.innerText || button.textContent || "";
+  const label = [
+    button.innerText,
+    button.textContent,
+    button.getAttribute?.("aria-label"),
+    button.getAttribute?.("title"),
+    button.getAttribute?.("data-testid"),
+    button.getAttribute?.("data-test-id")
+  ].filter(Boolean).join(" ");
+
   return label.replace(/\s+/g, " ").trim();
+}
+
+function hasDownloadIntent(label) {
+  const normalizedLabel = normalizeText(label);
+  return (
+    normalizedLabel.includes("下载") ||
+    normalizedLabel.includes("导出") ||
+    normalizedLabel.includes("保存") ||
+    normalizedLabel.includes("download") ||
+    normalizedLabel.includes("export") ||
+    normalizedLabel.includes("save")
+  );
 }
 
 function scoreDownloadButton(button) {
   const rect = button.getBoundingClientRect();
+  const label = normalizeText(getButtonLabel(button));
+  let labelScore = 0;
+
+  if (label === "下载" || label === "download") {
+    labelScore = 18;
+  } else if (label.includes("下载") || label.includes("download")) {
+    labelScore = 14;
+  } else if (label.includes("导出") || label.includes("保存") || label.includes("export") || label.includes("save")) {
+    labelScore = 10;
+  }
+
   const widthScore = rect.width >= 80 ? 4 : 0;
   const topHalfScore = rect.top < window.innerHeight * 0.35 ? 3 : 0;
   const rightSideScore = rect.left > window.innerWidth * 0.55 ? 3 : 0;
   const iconScore = button.querySelector("svg") ? 2 : 0;
-  return widthScore + topHalfScore + rightSideScore + iconScore;
+  return labelScore + widthScore + topHalfScore + rightSideScore + iconScore;
 }
 
 function isVisible(element) {
@@ -854,6 +1118,7 @@ function createDownloadButton() {
   const button = document.createElement("button");
   button.id = EXTENSION_BUTTON_ID;
   button.type = "button";
+  button.dataset.dianpingToolboxVersion = CONTENT_SCRIPT_VERSION;
   button.className = "lv-btn lv-btn-size-default lv-btn-shape-square";
   button.setAttribute("aria-label", "下载图片");
   button.style.cssText = [
@@ -996,6 +1261,36 @@ function createDownloadButton() {
   return button;
 }
 
+function getOrCreateDownloadButton() {
+  const existingButton = document.getElementById(EXTENSION_BUTTON_ID);
+  if (existingButton instanceof HTMLButtonElement) {
+    const loadedVersion = existingButton.dataset.dianpingToolboxVersion;
+    if (loadedVersion === CONTENT_SCRIPT_VERSION) {
+      return existingButton;
+    }
+
+    existingButton.remove();
+  }
+
+  return createDownloadButton();
+}
+
+function applyInlineDownloadButtonLayout(button) {
+  button.style.position = "";
+  button.style.top = "";
+  button.style.right = "";
+  button.style.zIndex = "";
+  button.style.marginLeft = "8px";
+}
+
+function applyFloatingDownloadButtonLayout(button) {
+  button.style.position = "fixed";
+  button.style.top = "96px";
+  button.style.right = "24px";
+  button.style.zIndex = "2147483647";
+  button.style.marginLeft = "0";
+}
+
 function resetButtonLabel(button) {
   window.setTimeout(() => {
     setButtonText(button, "下载图片");
@@ -1055,20 +1350,47 @@ function applyButtonVisual(button, visual) {
   }
 }
 
+function findPublishButtonContainer() {
+  return document.querySelector('div[class*="publish-button-pK2Xkl"]');
+}
+
 function mountButton() {
-  const nativeDownloadButton = findNativeDownloadButton();
-  const container = nativeDownloadButton?.parentElement;
-  if (!nativeDownloadButton || !container || container.querySelector(`#${EXTENSION_BUTTON_ID}`)) {
+  const publishButtonContainer = findPublishButtonContainer();
+  const existingButton = document.getElementById(EXTENSION_BUTTON_ID);
+  if (!publishButtonContainer) {
+    existingButton?.remove();
     return;
   }
 
-  container.style.display = "flex";
-  container.style.flexDirection = "row";
-  container.style.alignItems = "center";
-  container.style.gap = "8px";
-  container.style.flexWrap = "nowrap";
+  const nativeDownloadButton = findNativeDownloadButton();
+  const container = nativeDownloadButton?.parentElement;
+  const button = getOrCreateDownloadButton();
 
-  nativeDownloadButton.insertAdjacentElement("beforebegin", createDownloadButton());
+  if (nativeDownloadButton && container) {
+    if (container.querySelector(`#${EXTENSION_BUTTON_ID}`)) {
+      return;
+    }
+
+    applyInlineDownloadButtonLayout(button);
+    container.style.display = "flex";
+    container.style.flexDirection = "row";
+    container.style.alignItems = "center";
+    container.style.gap = "8px";
+    container.style.flexWrap = "nowrap";
+
+    nativeDownloadButton.insertAdjacentElement("beforebegin", button);
+    return;
+  }
+
+  if (!findImageUrls().length) {
+    button.remove();
+    return;
+  }
+
+  applyFloatingDownloadButtonLayout(button);
+  if (!document.body.contains(button)) {
+    document.body.appendChild(button);
+  }
 }
 
 const observer = new MutationObserver(() => {
