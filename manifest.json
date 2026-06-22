@@ -1,15 +1,19 @@
 {
   "manifest_version": 3,
-  "name": "即梦图片下载",
-  "version": "1.1.2",
-  "description": "在即梦页面中一键下载目标图片，自动转换为 JPG 并按网页标题归档。",
+  "name": "豆包即梦创作工具箱",
+  "version": "1.0.0",
+  "description": "合并豆包美食笔记提示词和即梦图片下载工具，根据当前授权链接自动切换功能与界面。",
   "permissions": [
     "activeTab",
-    "scripting",
     "clipboardWrite",
-    "downloads"
+    "downloads",
+    "sidePanel",
+    "scripting",
+    "tabs"
   ],
   "host_permissions": [
+    "https://www.doubao.com/*",
+    "https://doubao.com/*",
     "https://jimeng.jianying.com/*",
     "https://*.byteimg.com/*"
   ],
@@ -19,16 +23,29 @@
   "content_scripts": [
     {
       "matches": [
+        "https://www.doubao.com/*",
+        "https://doubao.com/*"
+      ],
+      "js": [
+        "doubao-content.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
         "https://jimeng.jianying.com/*"
       ],
       "js": [
-        "content.js"
+        "jimeng-content.js"
       ],
       "run_at": "document_idle"
     }
   ],
+  "side_panel": {
+    "default_path": "doubao-sidepanel.html"
+  },
   "action": {
-    "default_title": "Extract image src",
-    "default_popup": "popup.html"
+    "default_title": "豆包即梦创作工具箱",
+    "default_popup": "unsupported-popup.html"
   }
 }

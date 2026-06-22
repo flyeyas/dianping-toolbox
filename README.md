@@ -1,117 +1,33 @@
-# 即梦图片下载
+# 豆包即梦创作工具箱
 
-一个用于 `https://jimeng.jianying.com` 的 Chrome 扩展。
+这个 Chrome 扩展合并了当前目录下两个插件的能力：
 
-![插件效果预览](./img.png)
+- 豆包页面：打开美食笔记提示词侧边栏，并支持一键填入豆包输入框。
+- 即梦页面：页面内插入“下载图片”按钮，并保留扩展 popup 里的 XPath 图片地址提取与复制工具。
 
-插件会在页面指定位置插入一个“下载图片”按钮，点击后可直接下载当前目标图片，并自动完成以下处理：
+## 授权链接与 UI 切换
 
-- 使用浏览器默认下载目录保存文件
-- 按网页标题创建文件夹
-- 将图片统一转换为 `JPG` 格式
-- 使用图片内容的 `MD5` 值作为文件名
-
-## 功能说明
-
-- 仅在 `https://jimeng.jianying.com/*` 页面注入按钮
-- 支持下载即梦实际图片地址所在的 `https://*.byteimg.com/*` 资源
-- 在页面按钮区域插入一个蓝色“下载图片”按钮
-- 点击按钮后，提取目标图片地址并发起下载
-- 下载记录显示为由扩展发起
-- 文件保存格式为：`页面标题/MD5.jpg`
-
-## 下载后的目录结构
-
-示例：
-
-```text
-下载目录/
-  页面标题/
-    d41d8cd98f00b204e9800998ecf8427e.jpg
-```
+- `https://www.doubao.com/*`、`https://doubao.com/*`：点击扩展按钮会打开豆包侧边栏。
+- `https://jimeng.jianying.com/*`：点击扩展按钮会打开即梦图片工具 popup。
+- 其他页面：点击扩展按钮会显示未匹配授权链接提示。
 
 ## 安装方式
 
-1. 打开 Chrome 浏览器
-2. 进入 `chrome://extensions/`
-3. 打开右上角“开发者模式”
-4. 点击“加载已解压的扩展程序”
-5. 选择当前目录：
+1. 打开 Chrome 的 `chrome://extensions/`
+2. 开启“开发者模式”
+3. 点击“加载已解压的扩展程序”
+4. 选择这个目录：
 
 ```text
-/Users/flyeyas/items/chrome-extension/jimeng-image-downloader/jimeng-image-downloader
-```
-
-## 使用方法
-
-1. 打开 `https://jimeng.jianying.com`
-2. 进入包含目标图片的页面
-3. 等待页面加载完成
-4. 点击页面上的“下载图片”按钮
-5. 插件会自动下载图片到浏览器默认下载目录
-
-## Windows 更新
-
-如果你是在 Windows 电脑上使用这个插件，可以直接双击根目录下的：
-
-- `update.bat`
-
-这个脚本专门给没有编程基础、也没有安装 Git 的用户准备。它会自动：
-
-- 优先使用项目目录里的便携版 Git：`tools/git/cmd/git.exe`
-- 如果项目目录里没有便携版 Git，并且系统里也没有 Git，会自动下载 MinGit 到 `tools/git`
-- 便携版 Git 的下载源使用华为云镜像，不再依赖 GitHub
-- 自动把 `gitee` 远端切换成 HTTPS 地址
-- 在当前插件目录里直接拉取 `main` 分支最新代码
-- 自动清理已经在新版本中删除的旧文件
-- 保留窗口，方便在失败时直接看到提示
-
-更新完成后，请重新打开 `chrome://extensions/`，然后点击一次扩展的“重新加载”。
-
-自动下载使用的镜像地址：
-
-```text
-https://mirrors.huaweicloud.com/git-for-windows/v2.54.0.windows.1/MinGit-2.54.0-64-bit.zip
-```
-
-下载完成后，便携版 Git 会被放到：
-
-```text
-tools/git/
-```
-
-这个更新方式要求插件目录中本身已经包含 `.git` 目录。
-
-如果更新时提示网络失败，请先确认电脑可以访问 Gitee 和华为云镜像；如果提示文件被占用，先关闭 Chrome 里的扩展详情页，再重新双击一次 `update.bat`。如果你手动改过插件目录里的文件，更新会直接覆盖这些改动。
-
-## 运行逻辑
-
-插件当前使用以下页面定位规则：
-
-- 按钮插入位置：
-
-```xpath
-//div[@class="publish-button-R3RwZe"]
-```
-
-- 图片地址提取规则：
-
-```xpath
-//div[@class="image-player-content-rLWQU_"]/div/img/@src
+/Users/flyeyas/items/chrome-extension/doubao-jimeng-toolbox
 ```
 
 ## 文件说明
 
-- `manifest.json`：扩展配置
-- `content.js`：页面按钮注入与点击交互
-- `background.js`：图片抓取、转 JPG、MD5 命名、下载处理
-- `popup.html` / `popup.js`：扩展弹出页相关文件
-
-## 注意事项
-
-- 本插件依赖当前页面的类名和 DOM 结构
-- 如果即梦页面更新了类名，按钮可能不显示，或者无法提取图片
-- 如果即梦后续更换图片 CDN 域名，需要同步更新 `manifest.json` 和 `background.js` 里的允许域名
-- 如果浏览器开启了“下载前询问每个文件的保存位置”，可能仍会弹出保存提示
-- 如果安装了第三方下载接管工具，实际下载行为可能受浏览器环境影响
-- 转换为 JPG 后，原图透明区域会自动填充为白色背景
+- `manifest.json`：合并后的扩展配置和授权链接。
+- `background.js`：根据当前标签页 URL 切换 action UI，并处理即梦图片下载。
+- `doubao-content.js`：豆包页面输入框填入逻辑。
+- `doubao-sidepanel.html` / `doubao-sidepanel.css` / `doubao-sidepanel.js`：豆包侧边栏 UI。
+- `jimeng-content.js`：即梦页面“下载图片”按钮注入逻辑。
+- `jimeng-popup.html` / `jimeng-popup.js`：即梦图片地址提取 popup。
+- `unsupported-popup.html`：未匹配授权链接时的默认 UI。

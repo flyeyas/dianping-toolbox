@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>豆包美食笔记侧边栏</title>
+    <link rel="stylesheet" href="doubao-sidepanel.css">
+  </head>
+  <body>
+    <header class="panel-header">
+      <div class="app-mark" aria-hidden="true">食</div>
+      <div>
+        <p class="eyebrow">大众点评创作分成</p>
+        <h1>美食笔记提示词</h1>
+      </div>
+    </header>
+
+    <main class="panel-main">
+      <label class="field">
+        <span>餐厅名称</span>
+        <input id="restaurant" type="text" autocomplete="off" spellcheck="false">
+      </label>
+
+      <label class="field">
+        <span>推荐菜</span>
+        <textarea id="dishes" rows="4" spellcheck="false"></textarea>
+      </label>
+
+      <div class="actions" aria-label="提示词操作">
+        <button class="button primary" type="button" data-action="insert">填入豆包</button>
+        <button class="button" type="button" data-action="copy">复制提示词</button>
+      </div>
+
+      <label class="field preview-field">
+        <span>提示词预览</span>
+        <textarea id="prompt-preview" rows="18" readonly spellcheck="false"></textarea>
+      </label>
+    </main>
+
+    <footer class="panel-footer">
+      <button class="text-button" type="button" data-action="sample">恢复示例</button>
+      <button class="text-button" type="button" data-action="clear">清空输入</button>
+      <p id="status" class="status" role="status" aria-live="polite"></p>
+    </footer>
+
+    <script src="doubao-sidepanel.js"></script>
+  </body>
+</html>

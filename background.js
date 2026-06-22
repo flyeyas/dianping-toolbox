@@ -1,3 +1,8 @@
+const DOUBAO_SIDE_PANEL_PATH = "doubao-sidepanel.html";
+const JIMENG_POPUP_PATH = "jimeng-popup.html";
+const UNSUPPORTED_POPUP_PATH = "unsupported-popup.html";
+const DOUBAO_URL_PATTERN = /^https:\/\/(?:www\.)?doubao\.com\//;
+const JIMENG_URL_PATTERN = /^https:\/\/jimeng\.jianying\.com\//;
 const pendingDownloadFilenames = new Map();
 const JIMENG_ORIGIN = "https://jimeng.jianying.com";
 const ALLOWED_IMAGE_HOSTS = [
@@ -6,7 +11,118 @@ const ALLOWED_IMAGE_HOSTS = [
 const ALLOWED_IMAGE_HOST_SUFFIXES = [
   ".byteimg.com"
 ];
-const LOG_PREFIX = "[jimeng-image-downloader]";
+const LOG_PREFIX = "[doubao-jimeng-toolbox]";
+
+chrome.runtime.onInstalled.addListener(configureExtensionUi);
+chrome.runtime.onStartup.addListener(configureExtensionUi);
+
+chrome.tabs.onActivated.addListener(({ tabId }) => {
+  updateTabUi(tabId);
+});
+
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (changeInfo.url || changeInfo.status === "loading" || changeInfo.status === "complete") {
+    updateTabUi(tabId, tab.url);
+  }
+});
+
+configureExtensionUi();
+
+async function configureExtensionUi() {
+  try {
+    await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
+  } catch (error) {
+    logWarn("failed to configure side panel behavior", { error: error.message });
+  }
+
+  try {
+    const tabs = await chrome.tabs.query({});
+    await Promise.all(tabs.map((tab) => updateTabUi(tab.id, tab.url)));
+  } catch (error) {
+    logWarn("failed to initialize tab UI state", { error: error.message });
+  }
+}
+
+async function updateTabUi(tabId, knownUrl = "") {
+  if (!tabId) {
+    return;
+  }
+
+  const url = knownUrl || await getTabUrl(tabId);
+  const mode = getUiMode(url);
+  const options = getUiOptions(mode);
+
+  const updates = [
+    chrome.action.setTitle({ tabId, title: options.title }),
+    chrome.action.setPopup({ tabId, popup: options.popup })
+  ];
+
+  if (mode === "doubao") {
+    updates.push(chrome.sidePanel.setOptions({
+      tabId,
+      path: DOUBAO_SIDE_PANEL_PATH,
+      enabled: true
+    }));
+  } else {
+    updates.push(chrome.sidePanel.setOptions({
+      tabId,
+      enabled: false
+    }));
+  }
+
+  const results = await Promise.allSettled(updates);
+  results
+    .filter((result) => result.status === "rejected")
+    .forEach((result) => {
+      logWarn("failed to update tab UI state", {
+        tabId,
+        mode,
+        error: result.reason?.message || String(result.reason)
+      });
+    });
+}
+
+async function getTabUrl(tabId) {
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    return tab.url || "";
+  } catch (error) {
+    return "";
+  }
+}
+
+function getUiMode(url) {
+  if (DOUBAO_URL_PATTERN.test(url || "")) {
+    return "doubao";
+  }
+
+  if (JIMENG_URL_PATTERN.test(url || "")) {
+    return "jimeng";
+  }
+
+  return "unsupported";
+}
+
+function getUiOptions(mode) {
+  if (mode === "doubao") {
+    return {
+      popup: "",
+      title: "打开豆包美食笔记侧边栏"
+    };
+  }
+
+  if (mode === "jimeng") {
+    return {
+      popup: JIMENG_POPUP_PATH,
+      title: "打开即梦图片工具"
+    };
+  }
+
+  return {
+    popup: UNSUPPORTED_POPUP_PATH,
+    title: "当前页面未匹配授权链接"
+  };
+}
 
 chrome.downloads.onDeterminingFilename.addListener((downloadItem, suggest) => {
   const pendingFilename = pendingDownloadFilenames.get(downloadItem.id);
