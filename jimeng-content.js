@@ -1,5 +1,5 @@
 (() => {
-  const CONTENT_SCRIPT_VERSION = "2026-06-22-publish-button-gate";
+  const CONTENT_SCRIPT_VERSION = "2026-06-27-publish-button-prefix";
 
   if (window.__jimengToolboxContentLoaded === CONTENT_SCRIPT_VERSION) {
     return;
@@ -1351,7 +1351,7 @@ function applyButtonVisual(button, visual) {
 }
 
 function findPublishButtonContainer() {
-  return document.querySelector('div[class*="publish-button-pK2Xkl"]');
+  return document.querySelector('div[class*="publish-button-"]');
 }
 
 function mountButton() {
